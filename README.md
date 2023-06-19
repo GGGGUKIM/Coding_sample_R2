@@ -1,1 +1,1 @@
-# Coding_sample_R2
+# This project is one of my practice exercises for my Intro to Data Sci course, which is to visualize geospatial data in R. The project is my own work. Please do not distribute it without my permission.
