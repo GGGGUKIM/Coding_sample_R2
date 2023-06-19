@@ -1,0 +1,79 @@
+---
+title: "DC"
+author: "Zhaocheng Gu"
+output:
+  pdf_document: default
+date: "2021-03-15"
+---
+
+## Introduction
+
+This project is one of my practice exercises for my Intro to Data Sci course, which is to use data from [DC official website](https://opendata.dc.gov/) to plot the age distribution and car accicidents across different wards in DC, USA. The project is my own work. Please do not distribute it without my permission. The folder can also be accessed on [my GitHub](https://github.com/GGGGUKIM/Coding_sample_R2).
+
+```{r}
+# Packages
+require(tidyverse)
+require(ggthemes)
+require(sf)
+require(janitor)
+```
+
+## Plot for the age distribution across different DC wards
+
+Create a choropleth map that shows the median age by DC ward. Note the median_age variable can be found on the Ward_from_2012 shape data.
+
+```{r}
+# Get the DC ward data
+dc <- read_sf("dc_wards/Ward_from_2012.shp") %>% 
+  clean_names() %>% # clean the variable names
+  mutate(median_age = as.numeric(median_age))
+```
+
+```{r cache=TRUE, fig.align="center", fig.height=5, fig.width=7}
+# Generate the choropleth map
+dc %>% 
+  ggplot() +
+  geom_sf(aes(fill=median_age),
+          color = "white") +
+  scale_fill_continuous_tableau() + 
+  labs(fill="Median Age") +
+  theme_map()
+```
+
+## Plot for car accidents in different DC wards
+
+Create a choropleth map that shows the total number of car accidents in 2018 by DC Ward. Please use the map theme, provide a title for the map and legend, and use a non-default color/fill scheme.
+
+```{r echo=TRUE}
+# Import the car accidents data 
+crashes <- read_csv("dc_crashes.csv") %>% 
+  clean_names() %>% # clean the variable names
+  mutate(reportdate = as.Date(reportdate,"%Y/%m/%d"), 
+         year = lubridate::year(reportdate)) %>% 
+  # Convert to the time data and create a year variable
+  filter(year == 2018) %>% # only use the data in 2018
+  st_as_sf(coords = c("longitude", "latitude")) # convert to geometric data
+```
+
+```{r echo=TRUE, cache=TRUE, fig.align="center", fig.height=5, fig.width=7}
+# Ensure the crs align
+st_crs(crashes) <- st_crs(dc)
+
+# Merge the ward data with the car accidents data
+crash_wards <- st_join(dc,crashes)
+
+# Get the number of car accidents in each ward
+crash_each_ward <-
+  crash_wards %>% 
+  group_by(name) %>% 
+  count()
+
+# Plot
+crash_each_ward %>% 
+  ggplot() +
+  geom_sf(aes(fill=n),color="white",alpha=.9) +
+  scale_fill_viridis_c(option="magma") + 
+  theme_map() +
+  labs(fill="Number of\nCar Accidents",
+       title="Number of Car Accidents by DC Ward in 2018")
+```

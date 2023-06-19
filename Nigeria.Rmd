@@ -1,0 +1,157 @@
+---
+title: "Nigeria"
+author: "Zhaocheng Gu"
+output:
+  pdf_document: default
+date: "2021-03-15"
+---
+
+## Introduction
+
+This project is one of my practice exercises for my Intro to Data Sci course, which is to test the relationship between development and conflict in Nigeria. The project is my own work. Please do not distribute it without my permission. The folder can also be accessed on [my GitHub](https://github.com/GGGGUKIM/Coding_sample_R2).
+
+```{r}
+# Packages
+require(tidyverse)
+require(patchwork)
+require(ggthemes)
+require(sf)
+```
+
+## Import and Prepare the Data
+
+Read in the Nigeria country shape file, prio grid shape file, and the acled conflict (.csv) data.
+
+In addition, do the following:
+
+#### 1) Subset the acled data so that we only consider events that occurred in Nigeria. Also, only consider events where the geo-precision code (geo_precision) equals 1 (that is, events where we are confident about where the location of the event took place).
+
+#### 2) Convert the location information (longitude and latitude) for the Nigeria Acled data into a simple features geometry.
+
+```{r}
+# Import the data 
+nig <- read_sf("nigeria_shapefile/nigeria.shp") # Nigeria map
+afr <-  read_sf("africa_grid/africa_grid.shp") # Prio-Grid Nigeria
+acled <- read_csv("acled_africa.csv") # Conflict data
+```
+
+```{r}
+# Limit to Nigeria
+acled_nig <- acled %>% 
+  filter(country=="Nigeria") %>% 
+  filter(geo_precision == 1) %>% 
+  st_as_sf(coords=c("longitude","latitude"))
+```
+
+## Visual Check
+
+Plot the three spatial data objects as separate plots (Nigeria map, Prio-Grid map of Africa, and conflict map in Nigeria). Combine the three separate plots into a single plot using patchwork.
+
+```{r echo=TRUE, fig.align="center", fig.height=5, fig.width=7}
+# Nigeria map
+map_nig <- ggplot(nig) + geom_sf() + theme_map()
+
+# Prio-Grid map of Africa
+grid_afr <- ggplot(afr) + geom_sf() + theme_map()
+
+# Conflict map in Nigeria
+map_conflict_nig <- ggplot(acled_nig) + geom_sf(alpha=.1) + theme_map()
+
+# Combine three maps together
+map_nig + grid_afr + map_conflict_nig + plot_layout(ncol=1)
+```
+
+## Subset the Prio-Grid data
+
+Subset the Prio-Grid data to only capture grid locations that intersect with Nigeria. (Note: it's okay if the grid locations fall outside the Nigeria spatial boundary.)
+
+As visual check, plot the Nigeria map layering on the subsetted grid features. Make sure to use the alpha argument to make the grid map features transparent.
+
+```{r echo=TRUE, fig.align="center", fig.height=5, fig.width=7}
+# Get the grid data for Nigeria
+nig_grid <- st_filter(afr,nig)
+
+# Visual check
+ggplot() +
+  geom_sf(data = nig,fill="lightblue") +
+  geom_sf(data = nig_grid,alpha=.5,inherit.aes = F) +
+  theme_map()
+```
+
+## Overlay the conflict data points
+
+Using a spatial join, map the conflict events to the subsetted prio-grid data. Drop the spatial geometry features. (Note: Make sure the coordinate reference systems crs for the two spatial features match.)
+
+```{r}
+# Make sure that the conflict data and the grid data share the same crs
+st_crs(acled_nig) <- st_crs(nig_grid)
+
+# Merge
+grid_conflict <- st_join(nig_grid,acled_nig) 
+
+# Drop the spatial gemetry feature
+grid_conflict <- st_drop_geometry(grid_conflict)
+```
+
+## Aggregate the conflict data
+
+Aggregate the conflict data by grid location (gid). Specifically, you should generate a count of the total number of events that occurred in each grid location from 1997 - 2019. Take the natural log of this count.
+
+Merge the logged event counts back onto the Nigeria grid data using gid as a key.
+
+```{r}
+# Count the number of conflicts in each grid and log
+event_grid_counts <- grid_conflict %>% 
+  count(gid) %>% 
+  mutate(ln_total = log(n))
+
+# Merge back
+nig_grid2 <- left_join(nig_grid,event_grid_counts,by="gid")
+```
+
+## Generate a Choropleth Map
+
+Using the Nigeria grid data, make two choropleth maps:
+
+One where the color in each grid corresponds with the total number of events that took place in that grid, and the other capturing nightlight intensity by grid using nlightsMax. Combine these two plots using patchwork.
+
+```{r echo=TRUE, fig.align="center", fig.height=5, fig.width=7}
+# Choropleth map of ln conflict 
+choro_conflict <- 
+  nig_grid2 %>% 
+  ggplot() +
+  geom_sf(aes(fill=ln_total)) +
+  scale_fill_viridis_c(option="magma") + 
+  labs(fill="Log\nEvents") +
+  theme_map() +
+  theme(legend.position = "bottom")
+
+# Choropleth map of night lights
+choro_nlights <- 
+  nig_grid2 %>% 
+  ggplot() +
+  geom_sf(aes(fill=nlightsMax)) +
+  scale_fill_viridis_c() + 
+  labs(fill="Night Light\nIntensity") +
+  theme_map() +
+  theme(legend.position = "bottom")
+
+# Combine
+choro_conflict + choro_nlights 
+```
+
+## Correlating Development and Instability
+
+Using the Nigeria grid data, generate a scatter plot where the nighttime lights variable is on the x-axis and the total number of events is on the y-axis. Fit a loess curve to the plot. Comment on what you see.
+
+#### It seems that there is a positive relationship between the nighttime lights and the logged number of events in Nigeria, which can be explained by the fact that in a weak state, the possibility of violence will increase as the population gets concentrated.
+
+```{r echo=TRUE}
+# Relation between development and instability
+nig_grid2 %>% 
+  ggplot(aes(x=nlightsMax,y=ln_total)) +
+  geom_point(alpha=.5) +
+  geom_smooth(method="loess") +
+  theme_minimal() +
+  labs(x= "Night Light Intensity", y ="Log Number of Acled Events")
+```
